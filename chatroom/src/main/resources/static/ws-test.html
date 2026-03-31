@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>WebSocket Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <style>body{font-family:Arial,Helvetica,sans-serif;padding:16px}label{display:block;margin-top:8px}</style>
+</head>
+<body>
+  <h2>WebSocket (STOMP + SockJS) 測試</h2>
+  <label>Room ID: <input id="room" value="1" /></label>
+  <label>Username: <input id="user" value="tester" /></label>
+  <button id="connect">Connect</button>
+  <button id="disconnect" disabled>Disconnect</button>
+  <div style="margin-top:12px">
+    <textarea id="log" rows="10" cols="80" readonly></textarea>
+  </div>
+  <div style="margin-top:8px">
+    <input id="message" style="width:60%" placeholder="輸入訊息..." />
+    <button id="send" disabled>Send</button>
+  </div>
+
+  <script>
+    let stompClient = null;
+    const log = (s)=>{const t=document.getElementById('log'); t.value = new Date().toLocaleTimeString() + ' - ' + s + '\n' + t.value}
+
+    document.getElementById('connect').addEventListener('click', ()=>{
+      const socket = new SockJS('/ws');
+      stompClient = Stomp.over(socket);
+      stompClient.connect({}, ()=>{
+        document.getElementById('connect').disabled = true;
+        document.getElementById('disconnect').disabled = false;
+        document.getElementById('send').disabled = false;
+        const room = document.getElementById('room').value;
+        const subDest = '/topic/rooms/' + room;
+        stompClient.subscribe(subDest, (msg)=>{
+          log('RECV ' + msg.body);
+        });
+        log('Connected, subscribed to ' + subDest);
+      }, (err)=>{ log('Connect error: ' + JSON.stringify(err)); });
+    });
+
+    document.getElementById('disconnect').addEventListener('click', ()=>{
+      if(stompClient) stompClient.disconnect(()=>{ log('Disconnected'); stompClient = null; document.getElementById('connect').disabled=false; document.getElementById('disconnect').disabled=true; document.getElementById('send').disabled=true; });
+    });
+
+    document.getElementById('send').addEventListener('click', ()=>{
+      if(!stompClient) return log('Not connected');
+      const room = document.getElementById('room').value;
+      const user = document.getElementById('user').value;
+      const text = document.getElementById('message').value;
+      const payload = {roomId: room, sender: user, content: text};
+      stompClient.send('/app/chat.send', {}, JSON.stringify(payload));
+      log('SENT ' + JSON.stringify(payload));
+    });
+  </script>
+</body>
+</html>

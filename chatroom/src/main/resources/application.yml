@@ -1,0 +1,13 @@
+# Spring Boot PostgreSQL 設定
+spring:
+  datasource: 
+    driver-class-name: org.postgresql.Driver
+    url: "jdbc:postgresql://localhost:5432/chatroom_db"
+    username: "postgres"
+    password: "admin1234"
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+    properties:
+      dialect: org.hibernate.dialect.PostgreSQLDialect
