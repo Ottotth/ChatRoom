@@ -1,0 +1,108 @@
+即時聊天室（Spring Boot + Redis）詳細開發計畫
+
+1. 目標與範圍
+- 建立一個支援多房間、多人即時通訊的聊天室系統。
+- 支援 WebSocket（STOMP）用於即時消息傳遞，並以 Redis 作為跨實例的 Pub/Sub 與 Presence 快取。
+- 提供基本 REST API（房間管理、歷史訊息分頁、使用者管理）與 JWT 驗證。
+- 可在 Docker Compose 開發環境中執行，支援水平擴展到多個 Spring 實例。
+
+2. 核心技術堆疊
+- 後端：Java 17+、Spring Boot、Spring WebSocket (STOMP/SockJS)、Spring Data JPA
+- 資料庫：PostgreSQL（訊息歷史、使用者、房間、membership）
+- 快取/訊息總線：Redis（Pub/Sub、Session/Presence、TTL keys、Streams 可選）
+- 認證：Spring Security + JWT
+- 容器化：Docker + Docker Compose
+- 前端示範：簡單 HTML/JS（SockJS + stomp.js）
+
+3. 非功能需求
+- 延展性：可水平擴充（多實例 + Redis broker）
+- 可用性：訊息寫入 DB 與推播分離，盡量非同步寫入，確保不阻塞 WebSocket 路徑
+- 安全性：WebSocket 握手驗證 JWT，限制頻率，防止垃圾訊息
+- 保存策略：訊息永久化到資料庫並支援分頁查詢
+
+4. 高階架構
+- 客戶端 -> 負載均衡器（或直接到特定實例）-> Spring Boot 實例
+- Spring Boot 實例：WebSocket endpoint (STOMP)、REST API
+- Redis：作為 Spring 的 message broker（pub/sub），並保存 presence/typing TTL keys
+- PostgreSQL：持久化訊息與相關資料
+
+5. 資料模型（主要欄位）
+- User (id, username, display_name, password_hash, avatar_url, created_at, last_seen)
+- Room (id, name, type, created_by, created_at)
+- Membership (id, user_id, room_id, role, joined_at)
+- Message (id, room_id, sender_id, content, type, created_at, status)
+
+6. REST API（範例）
+- POST /api/auth/login -> 回傳 JWT
+- POST /api/users -> 註冊
+- GET /api/rooms -> 列房間
+- POST /api/rooms -> 建房
+- GET /api/rooms/{id}/messages?page=&size= -> 歷史訊息分頁
+
+7. WebSocket / STOMP 介面
+- Endpoint: /ws (SockJS fallback)
+- Client 在連線時在 headers 帶入 `Authorization: Bearer <token>`
+- SEND /app/chat.send -> payload {roomId, content, type}
+- SUBSCRIBE /topic/rooms/{roomId} -> 接收房間訊息
+- SUBSCRIBE /topic/presence/{roomId} -> 接收在線/typing 更新
+
+8. 訊息處理流程（建議實作）
+1. Client SEND -> Controller 接收（STOMP @MessageMapping）
+2. 驗證使用者是否有權限發送（membership 檢查）
+3. 先將訊息放入非同步寫入隊列（或直接寫 DB 的異步任務）
+4. 使用 Redis pub/sub 廣播該訊息的 DTO 到 topic -> 所有實例透過 SimpleMessageBroker 推送給訂閱者
+5. 若 DB 寫入失敗，排入重試或補償機制（補償任務）
+
+9. Presence / Typing 實作
+- Presence：使用 Redis SET 或 Key pattern `presence:room:{roomId}`，值為使用者 id，並以 TTL 更新
+- Typing：使用 Key `typing:room:{roomId}:{userId}` 設 TTL（幾秒），狀態變動時發送小事件給 /topic/presence/{roomId}
+
+10. 認證與授權
+- 使用 JWT 在 REST 與 WebSocket 握手階段驗證
+- 在 WebSocket 握手時使用 HandshakeInterceptor 檢查 Authorization header
+- 在訊息到達後做 membership/room 授權檢查
+
+11. Redis 與擴展策略
+- 使用 Spring 的 `enableSimpleBroker` 改由 `relay` 模式連到 Redis（或直接使用 Spring RedisMessageBroker）以支援多實例
+- Presence/typing 使用 Redis keys + TTL
+- 若高並發可考慮 Redis Streams 作為訊息緩衝與重播
+
+12. 持久化、備援與儲存策略
+- 訊息寫入 PostgreSQL，設計分表或索引以支援大量歷史查詢
+- 媒體檔案不存 DB，使用檔案儲存（S3/Blob）並以預簽名 URL 分享
+- 設定保留與清理策略（例如只保留 1 年或讓管理者設定）
+
+13. 開發里程碑（MVP）
+- Day 0: scaffold 專案、建立 Docker Compose（Postgres + Redis）
+- Day 1: JWT auth + 基本 REST (users, rooms)
+- Day 2: WebSocket 單機通訊（發/收）+ 簡單前端 demo
+- Day 3: Redis pub/sub 整合多實例測試 + presence
+- Day 4: 訊息持久化、歷史分頁、前端顯示
+- Day 5: 加入 typing/read receipts、簡易測試
+
+14. 交付物
+- `docker-compose.yml`（Postgres + Redis）
+- Spring Boot 專案骨架（WebSocket、Redis 配置、Entities、Repositories、Controllers）
+- 簡單前端 demo `index.html`（SockJS + stomp.js）
+- `DETAILED_CHAT_PLAN.txt`（本檔）與 README 啟動說明
+
+15. 開發啟動命令（範例）
+- 建議使用 Docker Compose 開發環境：
+```bash
+# 啟動 DB 與 Redis
+docker-compose up -d
+# 在 IDE 執行 Spring Boot 應用
+# 或使用 Maven
+./mvnw spring-boot:run
+```
+
+16. 風險與注意事項
+- WebSocket 握手時的跨域/安全性要先處理
+- 訊息持久化與即時推送的順序與一致性（選擇哪一端先）需明確
+- 高併發需針對 Redis 與資料庫做壓力測試
+
+17. 下一步（建議）
+- 若你同意，我可以立即 scaffold 一個範例專案（含 `docker-compose.yml`、Spring Boot skeleton、前端 demo），並提交給你測試。
+
+
+-- 計畫檔結束 --
