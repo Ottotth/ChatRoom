@@ -26,10 +26,16 @@ public class UserEntity {
     @Column(nullable = false)
     private String displayName;
 
-    @Column(nullable = false)
+    @Column(name = "password", nullable = false)
     private String password;
+
+    @Column(name = "password_hash", nullable = false)
+    private String passwordHash;
 
     @Column(nullable = false, updatable = false)
     private LocalDate createdAt;
+
+    @Column(name = "avatar_path")
+    private String avatarPath;
 
 }

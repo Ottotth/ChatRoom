@@ -17,4 +17,5 @@ public class UserInfoDTO {
   private String username;
   private String displayName;
   private LocalDate createdAt;
+  private String avatarUrl;
 }

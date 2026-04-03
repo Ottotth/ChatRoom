@@ -1,5 +1,6 @@
 package com.otto.chatroom.model.dto;
 
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -16,5 +17,7 @@ public class ChatMessage {
     private String content;
     private String type;
     private String sender;
+    private LocalDateTime createdAt;
+    private String senderAvatarUrl;
 
 }

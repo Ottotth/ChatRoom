@@ -6,16 +6,16 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import java.time.LocalDate;
+
 
 @Entity
-@Table(name = "memberships")
+@Table(name = "RoomMembers")
 @Setter
 @Getter
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class MembershipEntity {
+public class RoomMemberEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -31,6 +31,4 @@ public class MembershipEntity {
     @Column(nullable = false)
     private String role;
 
-    @Column(nullable = false, updatable = false)
-    private LocalDate joinedAt;
 }

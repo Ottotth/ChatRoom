@@ -31,9 +31,7 @@ public class MessageEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @Column(nullable = false)
-    private String type;
-
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
 }

@@ -1,0 +1,184 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ChatRoom Login</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --primary: #0c6cf2;
+      --primary-hover: #0657c7;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #d1d5db;
+      --ok: #0f9d58;
+      --err: #c62828;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: radial-gradient(circle at 20% 20%, #e8f0ff, var(--bg));
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+    .container {
+      width: 100%;
+      max-width: 720px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 8px 24px rgba(12, 108, 242, 0.08);
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      margin: 10px 0 6px;
+      color: var(--muted);
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 14px;
+      width: 100%;
+      padding: 10px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button:hover { background: var(--primary-hover); }
+    .hint {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .message {
+      margin-top: 10px;
+      font-size: 13px;
+      min-height: 18px;
+    }
+    .ok { color: var(--ok); }
+    .err { color: var(--err); }
+    @media (max-width: 720px) {
+      .container { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="card">
+      <h2>Login</h2>
+      <label for="login-username">Username</label>
+      <input id="login-username" placeholder="your username" />
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" placeholder="your password" />
+      <button id="login-btn">Login</button>
+      <div id="login-msg" class="message"></div>
+      <div class="hint">Login success will redirect to ws-test page.</div>
+    </section>
+
+    <section class="card">
+      <h2>Register</h2>
+      <label for="reg-username">Username</label>
+      <input id="reg-username" placeholder="choose username" />
+      <label for="reg-display">Display name</label>
+      <input id="reg-display" placeholder="choose display name" />
+      <label for="reg-password">Password</label>
+      <input id="reg-password" type="password" placeholder="choose password" />
+      <button id="register-btn">Register</button>
+      <div id="register-msg" class="message"></div>
+    </section>
+  </div>
+
+  <script>
+    const setMsg = (el, text, ok) => {
+      el.textContent = text;
+      el.className = `message ${ok ? "ok" : "err"}`;
+    };
+
+    document.getElementById("register-btn").addEventListener("click", async () => {
+      const username = document.getElementById("reg-username").value.trim();
+      const displayName = document.getElementById("reg-display").value.trim();
+      const password = document.getElementById("reg-password").value;
+      const msg = document.getElementById("register-msg");
+
+      if (!username || !displayName || !password) {
+        setMsg(msg, "Please fill all register fields", false);
+        return;
+      }
+
+      try {
+        const res = await fetch("/user/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ username, displayName, password })
+        });
+
+        if (!res.ok) {
+          setMsg(msg, `Register failed (${res.status})`, false);
+          return;
+        }
+
+        const ok = await res.json();
+        setMsg(msg, ok ? "Register success" : "Username already exists", ok);
+      } catch (e) {
+        setMsg(msg, "Register error", false);
+      }
+    });
+
+    document.getElementById("login-btn").addEventListener("click", async () => {
+      const username = document.getElementById("login-username").value.trim();
+      const password = document.getElementById("login-password").value;
+      const msg = document.getElementById("login-msg");
+
+      if (!username || !password) {
+        setMsg(msg, "Please fill username and password", false);
+        return;
+      }
+
+      try {
+        const res = await fetch("/user/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ username, password })
+        });
+
+        if (!res.ok) {
+          setMsg(msg, "Login failed: invalid username or password", false);
+          return;
+        }
+
+        setMsg(msg, "Login success, redirecting...", true);
+        window.location.href = "/ws-test.html";
+      } catch (e) {
+        setMsg(msg, "Login error", false);
+      }
+    });
+  </script>
+</body>
+</html>

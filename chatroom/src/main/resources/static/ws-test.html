@@ -2,57 +2,403 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>WebSocket Test</title>
+  <title>Create Room + Chat</title>
   <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
-  <style>body{font-family:Arial,Helvetica,sans-serif;padding:16px}label{display:block;margin-top:8px}</style>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; padding: 16px; }
+    label { display: block; margin-top: 8px; }
+    input { width: 320px; }
+    button { margin-top: 8px; margin-right: 8px; }
+    .card { border: 1px solid #ddd; padding: 12px; margin-top: 12px; border-radius: 8px; }
+    #message { width: 60%; }
+    #chatRecord {
+      width: 100%;
+      height: 320px;
+      overflow-y: auto;
+      border: 1px solid #d7d7d7;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fafafa;
+      box-sizing: border-box;
+    }
+    .chat-row {
+      display: flex;
+      margin: 8px 0;
+    }
+    .chat-row.other {
+      justify-content: flex-start;
+    }
+    .chat-row.me {
+      justify-content: flex-end;
+    }
+    .chat-bubble {
+      max-width: 72%;
+      padding: 8px 10px;
+      border-radius: 12px;
+      line-height: 1.35;
+      word-break: break-word;
+      border: 1px solid #e2e2e2;
+      background: #fff;
+    }
+    .chat-row.me .chat-bubble {
+      background: #e9f5ff;
+      border-color: #b8e0ff;
+    }
+    .chat-meta {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .chat-content {
+      font-size: 14px;
+      color: #222;
+    }
+  </style>
 </head>
 <body>
-  <h2>WebSocket (STOMP + SockJS) 測試</h2>
-  <label>Room ID: <input id="room" value="1" /></label>
-  <label>Username: <input id="user" value="tester" /></label>
-  <button id="connect">Connect</button>
-  <button id="disconnect" disabled>Disconnect</button>
-  <div style="margin-top:12px">
-    <textarea id="log" rows="10" cols="80" readonly></textarea>
+  <h2>Chat Room Tools</h2>
+
+  <div class="card">
+    <h3>Create Room</h3>
+    <label>Room Name: <input id="roomName" placeholder="輸入聊天室名稱" /></label>
+    <button id="createRoom">Create Room</button>
   </div>
-  <div style="margin-top:8px">
-    <input id="message" style="width:60%" placeholder="輸入訊息..." />
-    <button id="send" disabled>Send</button>
+
+  <div class="card">
+    <h3>Chat & Room Info</h3>
+    <label>Room ID: <input id="roomId" value="1" /></label>
+    <button id="joinRoom">Join Room</button>
+    <button id="leaveRoom" disabled>Leave Room</button>
+    <button id="refreshMembers">Refresh Info</button>
+    <div style="margin-top:12px">
+      <h4 id="roomTitle" style="margin:0 0 6px;">Room: —</h4>
+      <h4 style="margin:0 0 4px;">Members:</h4>
+      <ul id="membersList" style="list-style: none; padding: 0; max-height: 150px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 8px;"></ul>
+    </div>
+    <div style="margin-top:8px">
+      <input id="message" placeholder="輸入訊息..." />
+      <button id="send" disabled>Send</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Chat Record</h3>
+    <div id="chatRecord"></div>
+  </div>
+
+  <div class="card">
+    <h3>Log</h3>
+    <textarea id="log" rows="10" cols="80" readonly></textarea>
   </div>
 
   <script>
     let stompClient = null;
-    const log = (s)=>{const t=document.getElementById('log'); t.value = new Date().toLocaleTimeString() + ' - ' + s + '\n' + t.value}
+    let currentRoomId = null;
+    let currentUsername = null;
 
-    document.getElementById('connect').addEventListener('click', ()=>{
+    const log = (s) => {
+      const t = document.getElementById('log');
+      t.value = new Date().toLocaleTimeString() + ' - ' + s + '\n' + t.value;
+    };
+
+    const escapeHtml = (value) => String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+
+    const appendChatRecord = (sender, content, createdAt) => {
+      const box = document.getElementById('chatRecord');
+      const time = createdAt ? new Date(createdAt).toLocaleTimeString() : new Date().toLocaleTimeString();
+      const safeSender = sender || 'Unknown';
+      const safeContent = content || '';
+      const isMe = safeSender === 'Me' || (currentUsername !== null && safeSender === currentUsername);
+      const displaySender = isMe ? 'Me' : safeSender;
+      const rowClass = isMe ? 'chat-row me' : 'chat-row other';
+
+      const row = document.createElement('div');
+      row.className = rowClass;
+      row.innerHTML =
+        '<div class="chat-bubble">'
+        + '<div class="chat-meta">' + escapeHtml(displaySender) + ' · ' + escapeHtml(time) + '</div>'
+        + '<div class="chat-content">' + escapeHtml(safeContent) + '</div>'
+        + '</div>';
+
+      box.appendChild(row);
+      box.scrollTop = box.scrollHeight;
+    };
+
+    const clearChatRecord = () => {
+      document.getElementById('chatRecord').innerHTML = '';
+    };
+
+    const loadMessageHistory = async (roomId) => {
+      try {
+        const res = await fetch('/messages/rooms/' + roomId, { credentials: 'include' });
+        if (!res.ok) {
+          log('Failed to load message history');
+          return;
+        }
+        const history = await res.json();
+        clearChatRecord();
+        history.forEach(m => {
+          appendChatRecord(m.sender, m.content, m.createdAt);
+        });
+        log('Loaded ' + history.length + ' chat records');
+      } catch (e) {
+        log('Error loading message history: ' + e.message);
+      }
+    };
+
+    const ensureLoggedIn = async () => {
+      try {
+        const res = await fetch('/user/me', {
+          method: 'GET',
+          credentials: 'include'
+        });
+        if (!res.ok) {
+          window.location.replace('/index.html');
+          return;
+        }
+        const me = await res.json();
+        currentUsername = me.username || null;
+      } catch (e) {
+        window.location.replace('/index.html');
+      }
+    };
+
+    const connectToRoom = (roomId) => {
+      if (stompClient) {
+        return;
+      }
+
       const socket = new SockJS('/ws');
       stompClient = Stomp.over(socket);
-      stompClient.connect({}, ()=>{
-        document.getElementById('connect').disabled = true;
-        document.getElementById('disconnect').disabled = false;
-        document.getElementById('send').disabled = false;
-        const room = document.getElementById('room').value;
-        const subDest = '/topic/rooms/' + room;
-        stompClient.subscribe(subDest, (msg)=>{
+      stompClient.connect({}, () => {
+        const chatDest = '/topic/rooms/' + roomId;
+        stompClient.subscribe(chatDest, (msg) => {
+          try {
+            const parsed = JSON.parse(msg.body);
+            appendChatRecord(parsed.sender, parsed.content, parsed.createdAt);
+          } catch (e) {
+            appendChatRecord('System', msg.body);
+          }
           log('RECV ' + msg.body);
         });
-        log('Connected, subscribed to ' + subDest);
-      }, (err)=>{ log('Connect error: ' + JSON.stringify(err)); });
-    });
 
-    document.getElementById('disconnect').addEventListener('click', ()=>{
-      if(stompClient) stompClient.disconnect(()=>{ log('Disconnected'); stompClient = null; document.getElementById('connect').disabled=false; document.getElementById('disconnect').disabled=true; document.getElementById('send').disabled=true; });
-    });
+        const memberDest = '/topic/rooms/' + roomId + '/members';
+        stompClient.subscribe(memberDest, () => {
+          if (currentRoomId === roomId) {
+            loadMembers();
+          }
+        });
 
-    document.getElementById('send').addEventListener('click', ()=>{
-      if(!stompClient) return log('Not connected');
-      const room = document.getElementById('room').value;
-      const user = document.getElementById('user').value;
-      const text = document.getElementById('message').value;
-      const payload = {roomId: room, sender: user, content: text};
+        document.getElementById('send').disabled = false;
+        document.getElementById('joinRoom').disabled = true;
+        document.getElementById('leaveRoom').disabled = false;
+        log('Connected, subscribed to ' + chatDest + ' and ' + memberDest);
+      }, (err) => {
+        stompClient = null;
+        document.getElementById('send').disabled = true;
+        document.getElementById('joinRoom').disabled = false;
+        document.getElementById('leaveRoom').disabled = true;
+        log('Connect error: ' + JSON.stringify(err));
+      });
+    };
+
+    const disconnectRoom = () => {
+      if (!stompClient) {
+        document.getElementById('send').disabled = true;
+        document.getElementById('joinRoom').disabled = false;
+        document.getElementById('leaveRoom').disabled = true;
+        return;
+      }
+
+      stompClient.disconnect(() => {
+        log('Disconnected');
+        stompClient = null;
+        document.getElementById('send').disabled = true;
+        document.getElementById('joinRoom').disabled = false;
+        document.getElementById('leaveRoom').disabled = true;
+      });
+    };
+
+    const joinRoomApi = async (roomId) => {
+      const res = await fetch('/rooms/' + roomId + '/members/join', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+    };
+
+    const leaveRoomApi = async (roomId) => {
+      const res = await fetch('/rooms/' + roomId + '/members/leave', {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+    };
+
+    const switchRoom = async (nextRoomId) => {
+      if (currentRoomId === nextRoomId) {
+        return;
+      }
+
+      if (currentRoomId !== null) {
+        await leaveRoomApi(currentRoomId);
+        disconnectRoom();
+        log('Left room ' + currentRoomId);
+      }
+
+      await joinRoomApi(nextRoomId);
+      currentRoomId = nextRoomId;
+      log('Joined room ' + nextRoomId);
+      connectToRoom(nextRoomId);
+      await loadMembers();
+      await loadMessageHistory(nextRoomId);
+    };
+
+    ensureLoggedIn();
+
+    document.getElementById('send').addEventListener('click', () => {
+      if (!stompClient) {
+        log('Not connected');
+        return;
+      }
+      const roomId = currentRoomId ?? Number(document.getElementById('roomId').value);
+      const text = document.getElementById('message').value.trim();
+      if (!Number.isInteger(roomId) || roomId <= 0) {
+        log('Invalid room id');
+        return;
+      }
+      if (!text) {
+        log('Message is required');
+        return;
+      }
+
+      const payload = {
+        roomId: roomId,
+        content: text,
+        type: 'CHAT',
+        createdAt: new Date().toISOString()
+      };
       stompClient.send('/app/chat.send', {}, JSON.stringify(payload));
       log('SENT ' + JSON.stringify(payload));
+      document.getElementById('message').value = '';
+    });
+
+    const loadMembers = async () => {
+      const roomId = Number(document.getElementById('roomId').value);
+      if (!Number.isInteger(roomId) || roomId <= 0) {
+        log('Invalid room id');
+        return;
+      }
+      try {
+        const res = await fetch('/rooms/' + roomId, { credentials: 'include' });
+        if (!res.ok) {
+          log('Failed to load room info');
+          return;
+        }
+        const data = await res.json();
+        document.getElementById('roomTitle').textContent = 'Room: ' + (data.name || roomId);
+        const members = data.members || [];
+        const ul = document.getElementById('membersList');
+        ul.innerHTML = '';
+        members.forEach(m => {
+          const li = document.createElement('li');
+          li.textContent = m.displayName + ' (@' + m.username + ') - ' + m.role;
+          ul.appendChild(li);
+        });
+        log('Loaded room "' + data.name + '" with ' + members.length + ' members');
+      } catch (e) {
+        log('Error loading members: ' + e.message);
+      }
+    };
+
+    document.getElementById('joinRoom').addEventListener('click', async () => {
+      const roomId = Number(document.getElementById('roomId').value);
+      if (!Number.isInteger(roomId) || roomId <= 0) {
+        log('Invalid room id');
+        return;
+      }
+      try {
+        await switchRoom(roomId);
+      } catch (e) {
+        log('Join failed: ' + e.message);
+      }
+    });
+
+    document.getElementById('leaveRoom').addEventListener('click', async () => {
+      const roomId = currentRoomId ?? Number(document.getElementById('roomId').value);
+      if (!Number.isInteger(roomId) || roomId <= 0) {
+        log('Invalid room id');
+        return;
+      }
+      try {
+        await leaveRoomApi(roomId);
+        log('Left room');
+        disconnectRoom();
+        currentRoomId = null;
+        document.getElementById('membersList').innerHTML = '';
+        clearChatRecord();
+      } catch (e) {
+        log('Leave failed: ' + e.message);
+      }
+    });
+
+    document.getElementById('roomId').addEventListener('change', async () => {
+      const nextRoomId = Number(document.getElementById('roomId').value);
+      if (!Number.isInteger(nextRoomId) || nextRoomId <= 0) {
+        log('Invalid room id');
+        return;
+      }
+      if (currentRoomId === null) {
+        return;
+      }
+      try {
+        await switchRoom(nextRoomId);
+      } catch (e) {
+        log('Switch room failed: ' + e.message);
+      }
+    });
+
+    document.getElementById('refreshMembers').addEventListener('click', loadMembers);
+
+    document.getElementById('createRoom').addEventListener('click', async () => {
+      const roomName = document.getElementById('roomName').value.trim();
+      if (!roomName) {
+        log('Room name is required');
+        return;
+      }
+
+      try {
+        const res = await fetch('/rooms', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({ name: roomName })
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          log('Create failed: ' + errorText);
+          return;
+        }
+
+        const data = await res.json();
+        log((data && data.message) ? data.message : 'Room created');
+        document.getElementById('roomName').value = '';
+      } catch (e) {
+        log('Request error: ' + e.message);
+      }
     });
   </script>
 </body>
