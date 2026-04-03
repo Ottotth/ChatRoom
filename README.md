@@ -1,6 +1,6 @@
 # ChatRoom
 
-![ChatRoom Logo](img/001.png)
+![ChatRoom Logo](img/001.jpg)
 
 
 一個即時多人聊天室專案，採用 Spring Boot + React，支援房間聊天、會員管理、WebSocket 即時推播、頭像上傳、系統事件訊息與通知音效。
