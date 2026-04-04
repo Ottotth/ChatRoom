@@ -48,6 +48,7 @@ public class MessageServiceImpl implements MessageService {
     messageRepository.save(messageEntity);
     // sender 由後端從登入 session 決定，不依賴前端傳入
     message.setSender(principal.getName());
+    message.setSenderDisplayName(sender.getDisplayName());
     String senderAvatarUrl = sender.getAvatarPath() != null ? "/avatars/" + sender.getAvatarPath() : null;
     message.setSenderAvatarUrl(senderAvatarUrl);
     String dest = "/topic/rooms/" + (roomId != null ? roomId : "default");

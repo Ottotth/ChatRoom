@@ -2,7 +2,7 @@ import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client/dist/sockjs'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getMe, getMessageHistory, getRoomInfo, joinRoom, leaveRoom, notifyLeaveOnClose, uploadAvatar, logout } from '../lib/api'
+import { getMe, getMessageHistory, getRoomInfo, joinRoom, leaveRoom, notifyLeaveOnClose, uploadAvatar, updateDisplayName, logout } from '../lib/api'
 import ouroboros from '../assets/ouroboros.png'
 import noicon from '../assets/noicon.png'
 import messageSound from '../assets/message_sound.mp3'
@@ -16,6 +16,7 @@ function ChatPage() {
   const messageSoundRef = useRef(null)
   const currentUsernameRef = useRef('')
   const isMutedRef = useRef(false)
+  const avatarInputRef = useRef(null)
 
   const [me, setMe] = useState(null)
   const [roomTitle, setRoomTitle] = useState('-')
@@ -25,7 +26,9 @@ function ChatPage() {
   const [connected, setConnected] = useState(false)
   const [logs, setLogs] = useState([])
   const [showAvatarUpload, setShowAvatarUpload] = useState(false)
-  const [avatarFile, setAvatarFile] = useState(null)
+  const [displayNameInput, setDisplayNameInput] = useState('')
+  const [isUpdatingDisplayName, setIsUpdatingDisplayName] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
   const userScrollTimeoutRef = useRef(null)
@@ -91,7 +94,7 @@ function ChatPage() {
 
   const displayName = useMemo(() => {
     if (!me) return 'Guest'
-    return `${me.displayName || me.username} (@${me.username})`
+    return me.displayName || me.username
   }, [me])
 
   // Handle scroll detection
@@ -305,21 +308,43 @@ function ChatPage() {
     setMessageInput('')
   }
 
-  const handleUploadAvatar = async () => {
-    if (!avatarFile) return
+  const handleUpdateDisplayName = async () => {
+    const trimmed = displayNameInput.trim()
+    if (!trimmed) return
+    setIsUpdatingDisplayName(true)
     try {
-      const result = await uploadAvatar(avatarFile)
-      console.log('Avatar upload result:', result)
-      setMe((prev) => {
-        const updated = { ...prev, avatarUrl: result }
-        console.log('Updated me:', updated)
-        return updated
-      })
-      setShowAvatarUpload(false)
-      setAvatarFile(null)
+      await updateDisplayName(trimmed)
+      setMe((prev) => ({ ...prev, displayName: trimmed }))
+      setDisplayNameInput('')
     } catch (error) {
-      alert(`Upload failed: ${error.message}`)
-      console.error('Avatar upload error:', error)
+      alert(`Failed to update display name: ${error.message}`)
+    } finally {
+      setIsUpdatingDisplayName(false)
+    }
+  }
+
+  const handleAvatarFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const maxAvatarBytes = 10 * 1024 * 1024
+    if (file.size > maxAvatarBytes) {
+      alert('Image is too large. Please choose a file smaller than 10MB.')
+      e.target.value = ''
+      return
+    }
+    e.target.value = ''
+    setIsUploadingAvatar(true)
+    try {
+      const result = await uploadAvatar(file)
+      setMe((prev) => ({ ...prev, avatarUrl: result }))
+    } catch (error) {
+      const rawMessage = error?.message || ''
+      const isPayloadTooLarge = rawMessage.includes('413')
+      alert(isPayloadTooLarge
+        ? 'Image is too large for upload. Please choose a smaller file (under 10MB).'
+        : `Upload failed: ${rawMessage}`)
+    } finally {
+      setIsUploadingAvatar(false)
     }
   }
 
@@ -330,6 +355,7 @@ function ChatPage() {
           <img src={ouroboros} alt="ouroboros logo" className="header-logo-img" />
         </div>
         <div className="actions">
+          <p className="header-user-name">{displayName}</p>
           <button
             className="avatar-btn"
             onClick={() => setShowAvatarUpload(true)}
@@ -377,7 +403,8 @@ function ChatPage() {
 
               const mine = me && message.sender === me.username
               const avatarUrl = message.senderAvatarUrl || (mine ? me?.avatarUrl : '') || noicon
-              const senderLabel = mine ? 'Me' : (message.sender || 'unknown')
+              const senderLabel = mine ? 'Me' : (message.senderDisplayName || message.sender || 'unknown')
+              const isLongSenderLabel = senderLabel.length > 6
               const messageTime = new Date(message.createdAt || Date.now()).toLocaleTimeString('zh-TW', { hour12: false })
 
               return (
@@ -390,7 +417,7 @@ function ChatPage() {
                   </div>
 
                   <div className={`message-side ${mine ? 'mine' : ''}`}>
-                    <p className="message-name">{senderLabel}</p>
+                    <p className={`message-name ${isLongSenderLabel ? 'long' : ''}`}>{senderLabel}</p>
                     <img src={avatarUrl} alt="avatar" className="bubble-avatar" />
                   </div>
                 </div>
@@ -405,7 +432,7 @@ function ChatPage() {
               placeholder="Type a message..."
               rows={2}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
                   handleSendMessage()
                 }
@@ -440,7 +467,7 @@ function ChatPage() {
                 <li key={`${member.username}-${member.joinedAt || ''}`}>
                   <img src={member.avatarUrl || noicon} alt={member.displayName} className="member-avatar" />
                   <div className="member-info">
-                    <strong>{member.displayName}</strong>
+                    <strong>{member.username === me?.username ? 'Me' : member.displayName}</strong>
                   </div>
                 </li>
               ))}
@@ -452,16 +479,54 @@ function ChatPage() {
       {showAvatarUpload && (
         <div className="modal-overlay" onClick={() => setShowAvatarUpload(false)}>
           <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Upload Avatar</h2>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
-            />
-            <div className="modal-actions">
-              <button onClick={() => setShowAvatarUpload(false)}>Cancel</button>
-              <button onClick={handleUploadAvatar} disabled={!avatarFile}>Upload</button>
+            <button className="modal-close-btn" onClick={() => { setShowAvatarUpload(false); setDisplayNameInput('') }}>✕</button>
+            <h2>Profile Settings</h2>
+
+            <div className="profile-avatar-preview">
+              <img src={me?.avatarUrl || noicon} alt="current avatar" />
+              <p className="profile-current-name">{me?.displayName || me?.username}</p>
+              <p className="profile-current-username">@{me?.username || 'guest'}</p>
             </div>
+
+            <div className="profile-section">
+              <h3>Change Avatar</h3>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleAvatarFileChange}
+              />
+              <button
+                className="profile-save-btn"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+              >
+                {isUploadingAvatar ? 'Uploading...' : 'Choose & Upload Image'}
+              </button>
+            </div>
+
+            <div className="profile-section">
+              <h3>Change Display Name</h3>
+              <input
+                type="text"
+                className="profile-text-input"
+                placeholder={me?.displayName || me?.username}
+                value={displayNameInput}
+                onChange={(e) => setDisplayNameInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateDisplayName() }}
+                maxLength={32}
+              />
+              <button
+                className="profile-save-btn"
+                onClick={handleUpdateDisplayName}
+                disabled={isUpdatingDisplayName || !displayNameInput.trim()}
+              >
+                {isUpdatingDisplayName ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+
+
           </div>
         </div>
       )}

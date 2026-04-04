@@ -17,8 +17,5 @@ public interface RoomService {
 
   public List<RoomInfoDTO> listRooms();
 
-  
-
-  
 
 }

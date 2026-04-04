@@ -26,6 +26,7 @@ public class MessageMapper {
     return ChatMessage.builder()
         .content(entity.getContent())
         .sender(entity.getSender().getUsername())
+      .senderDisplayName(entity.getSender().getDisplayName())
         .createdAt(entity.getCreatedAt())
         .senderAvatarUrl(senderAvatarUrl)
         .build();

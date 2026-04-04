@@ -88,6 +88,14 @@ export function getMessageHistory(roomId) {
   return request(`/messages/rooms/${roomId}`)
 }
 
+export function updateDisplayName(displayName) {
+  return request('/user/changeDisplayname', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ displayName }),
+  })
+}
+
 export async function uploadAvatar(file) {
   const formData = new FormData()
   formData.append('file', file)

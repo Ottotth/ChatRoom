@@ -13,8 +13,10 @@ public interface UserRepository extends JpaRepository<UserEntity, Long> {
     @Query("SELECT u.id FROM UserEntity u WHERE u.username = :username")
     Optional<Long> findIdByUsername(String username);
 
+    @Modifying
+    @Transactional
     @Query("UPDATE UserEntity u SET u.displayName = :displayName WHERE u.username = :username")
-    boolean updateDisplayName(String displayName, String username);
+    int updateDisplayName(String displayName, String username);
 
     @Modifying
     @Transactional

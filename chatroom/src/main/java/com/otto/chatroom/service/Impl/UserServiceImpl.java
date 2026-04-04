@@ -89,7 +89,7 @@ public class UserServiceImpl implements UserService {
 
   @Override
   public boolean changeDisplayName(UserInfoDTO dto) {
-    return userRepository.updateDisplayName(dto.getDisplayName(), dto.getUsername());
+    return userRepository.updateDisplayName(dto.getDisplayName(), dto.getUsername()) > 0;
   }
 
   @Override

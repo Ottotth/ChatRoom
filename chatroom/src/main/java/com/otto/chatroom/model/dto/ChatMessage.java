@@ -17,6 +17,7 @@ public class ChatMessage {
     private String content;
     private String type;
     private String sender;
+    private String senderDisplayName;
     private LocalDateTime createdAt;
     private String senderAvatarUrl;
 
