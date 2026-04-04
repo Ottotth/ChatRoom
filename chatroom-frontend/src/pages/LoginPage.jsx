@@ -20,7 +20,14 @@ function LoginPage() {
       await getMe()
       navigate('/chat/1')
     } catch (error) {
-      setMessage(`Login failed: ${error.message}`)
+      const rawMessage = error?.message || ''
+      const isWrongCredential = error?.status === 401
+        || error?.status === 403
+        || rawMessage.toLowerCase().includes('bad credentials')
+
+      setMessage(isWrongCredential
+        ? 'The username/password is worng.'
+        : `Login failed: ${rawMessage}`)
     } finally {
       setLoading(false)
     }

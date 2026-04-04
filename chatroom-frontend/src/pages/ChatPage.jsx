@@ -138,6 +138,87 @@ function ChatPage() {
     setConnected(false)
   }
 
+  const connectWebSocket = (targetRoomId) => {
+    const client = new Client({
+      webSocketFactory: () => new SockJS('/ws'),
+      reconnectDelay: 0,
+      onConnect: () => {
+        client.subscribe(`/topic/rooms/${targetRoomId}`, (frame) => {
+          try {
+            const payload = JSON.parse(frame.body)
+            setMessages((prev) => [...prev, payload])
+
+            const isIncomingChat = payload?.type !== 'SYSTEM'
+              && payload?.sender
+              && payload.sender !== currentUsernameRef.current
+            if (isIncomingChat) {
+              playIncomingMessageSound()
+            }
+          } catch {
+            pushLog(`Failed to parse message: ${frame.body}`)
+          }
+        })
+
+        client.subscribe(`/topic/rooms/${targetRoomId}/members`, async (frame) => {
+          try {
+            const memberEvent = JSON.parse(frame.body)
+            if (memberEvent?.event === 'JOIN' && memberEvent?.username) {
+              setMessages((prev) => [...prev, {
+                type: 'SYSTEM',
+                content: `---- ${memberEvent.username} in ----`,
+                createdAt: new Date().toISOString(),
+              }])
+            }
+            if (memberEvent?.event === 'LEAVE' && memberEvent?.username) {
+              setMessages((prev) => [...prev, {
+                type: 'SYSTEM',
+                content: `---- ${memberEvent.username} out ----`,
+                createdAt: new Date().toISOString(),
+              }])
+            }
+          } catch {
+            pushLog(`Failed to parse member event: ${frame.body}`)
+          }
+
+          try {
+            const latest = await getRoomInfo(targetRoomId)
+            setMembers(latest?.members || [])
+          } catch (error) {
+            pushLog(`Failed to update members: ${error.message}`)
+          }
+        })
+
+        setConnected(true)
+        pushLog(`Connected to room ${targetRoomId}`)
+      },
+      onStompError: (frame) => {
+        pushLog(`STOMP error: ${frame.headers.message || 'unknown error'}`)
+      },
+      onWebSocketClose: () => setConnected(false),
+      onWebSocketError: () => {
+        setConnected(false)
+        pushLog('WebSocket connection failed')
+      },
+    })
+
+    clientRef.current = client
+    client.activate()
+  }
+
+  const handleReconnect = async () => {
+    if (connected || !Number.isInteger(numericRoomId) || numericRoomId <= 0) return
+    try {
+      await disconnect()
+      await joinRoom(numericRoomId)
+      const latest = await getRoomInfo(numericRoomId)
+      setMembers(latest?.members || [])
+      connectWebSocket(numericRoomId)
+      pushLog('Reconnecting...')
+    } catch (error) {
+      pushLog(`Reconnect failed: ${error.message}`)
+    }
+  }
+
   useEffect(() => {
     if (!Number.isInteger(numericRoomId) || numericRoomId <= 0) {
       navigate('/rooms')
@@ -172,70 +253,7 @@ function ChatPage() {
         setMembers(room?.members || [])
         setMessages(Array.isArray(history) ? history : [])
 
-        const client = new Client({
-          webSocketFactory: () => new SockJS('/ws'),
-          reconnectDelay: 0,
-          onConnect: () => {
-            client.subscribe(`/topic/rooms/${numericRoomId}`, (frame) => {
-              try {
-                const payload = JSON.parse(frame.body)
-                setMessages((prev) => [...prev, payload])
-
-                const isIncomingChat = payload?.type !== 'SYSTEM'
-                  && payload?.sender
-                  && payload.sender !== currentUsernameRef.current
-                if (isIncomingChat) {
-                  playIncomingMessageSound()
-                }
-              } catch {
-                pushLog(`Failed to parse message: ${frame.body}`)
-              }
-            })
-
-            client.subscribe(`/topic/rooms/${numericRoomId}/members`, async (frame) => {
-              try {
-                const memberEvent = JSON.parse(frame.body)
-                if (memberEvent?.event === 'JOIN' && memberEvent?.username) {
-                  setMessages((prev) => [...prev, {
-                    type: 'SYSTEM',
-                    content: `---- ${memberEvent.username} in ----`,
-                    createdAt: new Date().toISOString(),
-                  }])
-                }
-                if (memberEvent?.event === 'LEAVE' && memberEvent?.username) {
-                  setMessages((prev) => [...prev, {
-                    type: 'SYSTEM',
-                    content: `---- ${memberEvent.username} out ----`,
-                    createdAt: new Date().toISOString(),
-                  }])
-                }
-              } catch {
-                pushLog(`Failed to parse member event: ${frame.body}`)
-              }
-
-              try {
-                const latest = await getRoomInfo(numericRoomId)
-                setMembers(latest?.members || [])
-              } catch (error) {
-                pushLog(`Failed to update members: ${error.message}`)
-              }
-            })
-
-            setConnected(true)
-            pushLog(`Connected to room ${numericRoomId}`)
-          },
-          onStompError: (frame) => {
-            pushLog(`STOMP error: ${frame.headers.message || 'unknown error'}`)
-          },
-          onWebSocketClose: () => setConnected(false),
-          onWebSocketError: () => {
-            setConnected(false)
-            pushLog('WebSocket connection failed')
-          },
-        })
-
-        clientRef.current = client
-        client.activate()
+        connectWebSocket(numericRoomId)
       } catch (error) {
         pushLog(`Failed to join room: ${error.message}`)
       }
@@ -364,7 +382,13 @@ function ChatPage() {
             <img src={me?.avatarUrl || noicon} alt="user avatar" />
           </button>
           <div className="conn-status">
-            <span className={`conn-dot ${connected ? 'ok' : 'off'}`} title={connected ? 'Connected' : 'Disconnected'} />
+            <button
+              type="button"
+              className={`conn-dot ${connected ? 'ok' : 'off'}`}
+              title={connected ? 'Connected' : 'Disconnected - click to reconnect'}
+              onClick={handleReconnect}
+              aria-label={connected ? 'Connected' : 'Disconnected, click to reconnect'}
+            />
             <button
               className="mute-btn"
               onClick={toggleMute}

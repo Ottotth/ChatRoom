@@ -427,15 +427,19 @@ button.ghost {
   border-radius: 50%;
   background: #555555;
   flex-shrink: 0;
+  border: none;
+  padding: 0;
 }
 
 .conn-dot.ok {
   background: #22c55e;
   box-shadow: 0 0 6px #22c55e88;
+  cursor: default;
 }
 
 .conn-dot.off {
   background: #555555;
+  cursor: pointer;
 }
 
 .conn-status {
