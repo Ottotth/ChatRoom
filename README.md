@@ -11,7 +11,7 @@ https://ouroboros-cr.duckdns.org/
 ## 專案功能
 
 - 使用者註冊 / 登入 / 登出（Session）
-- 建立聊天室、進入聊天室、離開聊天室
+- 建立聊天室、進入聊天室、離開聊天室 (Only backend, now frontend only have one public room)
 - 房間成員列表即時更新
 - 即時聊天（WebSocket + STOMP）
 - 支援多行輸入訊息與換行顯示
