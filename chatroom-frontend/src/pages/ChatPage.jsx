@@ -32,6 +32,7 @@ function ChatPage() {
   const [isMuted, setIsMuted] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
   const userScrollTimeoutRef = useRef(null)
+  const didInitialMessagesRenderRef = useRef(false)
 
   const numericRoomId = Number(roomId)
 
@@ -119,14 +120,29 @@ function ChatPage() {
 
   // Auto-scroll to latest message only if user is near bottom or they sent the message
   useEffect(() => {
+    if (!didInitialMessagesRenderRef.current) {
+      didInitialMessagesRenderRef.current = true
+      const isMobileViewport = window.matchMedia('(max-width: 640px)').matches
+      if (isMobileViewport) {
+        return
+      }
+    }
+
     const lastMessage = messages[messages.length - 1]
     const isCurrentUserMessage = lastMessage && me && lastMessage.sender === me.username
 
     // Only auto-scroll if not in manual scroll cooldown
     if (userScrollTimeoutRef.current === null && (isNearBottom || isCurrentUserMessage)) {
-      messagesEndRef.current?.scrollIntoView()
+      const messagesContainer = messagesEndRef.current?.parentElement
+      if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight
+      }
     }
   }, [messages, isNearBottom, me])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [roomId])
 
   const disconnect = async () => {
     if (!clientRef.current) {
@@ -142,6 +158,8 @@ function ChatPage() {
     const client = new Client({
       webSocketFactory: () => new SockJS('/ws'),
       reconnectDelay: 0,
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
       onConnect: () => {
         client.subscribe(`/topic/rooms/${targetRoomId}`, (frame) => {
           try {
@@ -224,6 +242,8 @@ function ChatPage() {
       navigate('/rooms')
       return
     }
+
+    didInitialMessagesRenderRef.current = false
 
     let cancelled = false
 

@@ -1,0 +1,8 @@
+# Deployment secrets
+.deploy.env
+
+# Local deploy temp artifacts
+.deploy-build/
+
+# Private keys
+*.pem
